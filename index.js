@@ -3,86 +3,86 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 require("dotenv").config();
-
+const PORT = process.env.PORT || 5000;
 // Connect to MongoDB Atlas
 mongoose.connect(process.env.MongoURl, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
 });
 
-const User = mongoose.model('User', new mongoose.Schema({
-    firstName: String,
-    lastName: String,
-    email: String,
-    department: String,
-}));
+
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// Middleware to check if the ID is valid
-function checkValidObjectId(req, res, next) {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-        return res.status(400).send({ message: 'Invalid ID format' });
-    }
-    next();
-}
+// Task schema and model
+const taskSchema = new mongoose.Schema({
+    title: { type: String, required: true },
+    description: { type: String, required: true },
+    status: { type: String, enum: ['pending', 'in-progress', 'completed'], default: 'pending' },
+}, { timestamps: true });
 
+const Task = mongoose.model('Task', taskSchema);
 
-// Get all users with pagination
-app.get('/users', async (req, res) => {
-    const { page = 1, limit = 10 } = req.query;
-    const skip = (page - 1) * limit;
-    
+// Routes
+
+// GET /tasks: Retrieve all tasks
+app.get('/tasks', async (req, res) => {
     try {
-        const users = await User.find()
-            .sort({ _id: -1 }) // Sort by _id in descending order
-            .skip(skip)
-            .limit(parseInt(limit));
-        
-        const totalUsers = await User.countDocuments();
-        res.send({ users, totalUsers });
+        const tasks = await Task.find();
+        res.status(200).json(tasks);
     } catch (error) {
-        res.status(500).send({ message: 'Error fetching users' });
+        res.status(500).json({ message: 'Error retrieving tasks', error });
     }
 });
 
-
-
-// Get a specific user by ID
-app.get('/users/:id', checkValidObjectId, async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) {
-        return res.status(404).send({ message: 'User not found' });
+// POST /tasks: Create a new task
+app.post('/tasks', async (req, res) => {
+    const { title, description, status } = req.body;
+    try {
+        const newTask = new Task({ title, description, status });
+        await newTask.save();
+        res.status(201).json(newTask);
+    } catch (error) {
+        res.status(400).json({ message: 'Error creating task', error });
     }
-    res.send(user);
 });
 
+// PUT /tasks/:id: Update a task by ID
+app.put('/tasks/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, description, status } = req.body;
+    try {
+        const updatedTask = await Task.findByIdAndUpdate(
+            id,
+            { title, description, status },
+            { new: true, runValidators: true }
+        );
 
-// Create a new user
-app.post('/users', async (req, res) => {
-    const user = new User(req.body);
-    await user.save();
-    res.send(user);
-});
+        if (!updatedTask) return res.status(404).json({ message: 'Task not found' });
 
-app.delete('/users/:id', checkValidObjectId, async (req, res) => {
-    const user = await User.findByIdAndDelete(req.params.id);
-    if (!user) {
-        return res.status(404).send({ message: 'User not found' });
+        res.status(200).json(updatedTask);
+    } catch (error) {
+        res.status(400).json({ message: 'Error updating task', error });
     }
-    res.send({ message: 'User deleted' });
 });
 
-app.put('/users/:id', checkValidObjectId, async (req, res) => {
-    const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!user) {
-        return res.status(404).send({ message: 'User not found' });
+// DELETE /tasks/:id: Delete a task by ID
+app.delete('/tasks/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const deletedTask = await Task.findByIdAndDelete(id);
+
+        if (!deletedTask) return res.status(404).json({ message: 'Task not found' });
+
+        res.status(200).json({ message: 'Task deleted successfully', deletedTask });
+    } catch (error) {
+        res.status(500).json({ message: 'Error deleting task', error });
     }
-    res.send(user);
 });
 
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Start the server
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});
